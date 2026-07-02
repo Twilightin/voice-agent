@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Agent</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; }
+      button { font-size: 1rem; padding: 0.6rem 1.2rem; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      #status { margin-top: 1rem; color: #444; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Voice Agent</h1>
+      <p>「会話をはじめる」を押してマイクを許可し、話しかけてください。</p>
+      <button id="start">会話をはじめる</button>
+      <p id="status">未接続</p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+[project]
+name = "voice-agent-backend"
+version = "0.1.0"
+description = "LangGraph Supervisor backend for the voice agent (Realtime → Supervisor → task agents)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Pinned to stable LangGraph/LangChain v1.x
+    "langgraph>=1.2,<2",
+    "langchain>=1.0,<2",
+    "langchain-openai>=1.0,<2",
+    "langgraph-supervisor>=0.0.31",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

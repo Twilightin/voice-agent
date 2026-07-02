@@ -23,33 +23,38 @@ Role split (unchanged from `reference.md`):
 - **Supervisor**: reads intent, dispatches to one task agent, returns a 1–2 sentence summary.
 - **Task agents**: run the actual tool and report the result.
 
-## Project layout (root-rooted Python + separate frontend)
+## Project layout (backend-contained Python + separate frontend)
+
+> **Revised during implementation.** The plan started root-rooted, but the user consolidated the uv-init
+> files into `backend/`, so `backend/` became the Python project root. `.env` stays at the repo root and
+> `app.py` loads it by explicit path (independent of CWD).
 
 ```
 voice-agent/
-├── pyproject.toml            # at root; add deps (was empty)
-├── .python-version           # 3.12
-├── .env                      # OPENAI_API_KEY=...  (gitignored)
+├── .env                      # OPENAI_API_KEY=...  (gitignored; repo root)
 ├── .env.example              # committed template
-├── .venv/                    # recreated at root via `uv sync`
-├── backend/
-│   ├── __init__.py           # makes `backend` importable
-│   └── app.py                # supervisor + FastAPI (from backend.py) + CORS + /session
-├── frontend/
-│   ├── package.json          # @openai/agents, zod, vite, typescript
-│   ├── tsconfig.json
-│   ├── vite.config.ts
-│   ├── index.html            # Start button + status line
-│   └── src/main.ts           # from voice.ts; fetch /session → connect
-├── reference.md
-├── README.md                 # how to run both processes
-└── docs/superpowers/specs/2026-07-02-voice-agent-design.md
+├── .gitignore                # root; ignores .env, .venv
+├── reference.md / README.md / CLAUDE.md
+├── backend/                  # Python uv project root
+│   ├── pyproject.toml         # deps live here
+│   ├── .python-version        # 3.12
+│   ├── .gitignore
+│   ├── .venv/                 # `uv sync` creates it here
+│   ├── app.py                 # supervisor + FastAPI (from backend.py) + CORS + /session
+│   └── tests/test_ask.py
+└── frontend/
+    ├── package.json           # @openai/agents, zod, vite, typescript
+    ├── tsconfig.json
+    ├── vite.config.ts
+    ├── index.html             # Start button + status line
+    └── src/main.ts            # from voice.ts; fetch /session → connect
 ```
 
 ### Cleanup of uv-init artifacts
-- **Delete** root `main.py` (hello-world stub — unused).
-- **Delete** the stray empty `backend/.venv` (no deps installed); `uv sync` recreates `.venv` at root.
-- `pyproject.toml` and `.env` stay at root (where the user placed them).
+- **Delete** the `main.py` hello-world stubs and the superseded `backend/backend.py` / `voice.ts` snippets
+  (content now lives in `app.py` / `main.ts`).
+- **Delete** the duplicate empty `pyproject.toml` (deps consolidated into `backend/pyproject.toml`).
+- `app.py` runs as `app:app` from inside `backend/`; no package `__init__.py` needed.
 
 ## Backend (`backend/app.py`)
 
@@ -111,11 +116,11 @@ Vite + TypeScript. `src/main.ts` = `voice.ts` reworked so it runs in a real page
 
 ```bash
 # one-time
-uv sync                     # installs backend deps into root .venv
+cd backend && uv sync       # installs backend deps into backend/.venv
 cd frontend && npm install  # installs frontend deps
 
 # terminal 1 — backend
-uv run uvicorn backend.app:app --port 8000 --reload
+cd backend && uv run uvicorn app:app --port 8000 --reload
 
 # terminal 2 — frontend
 cd frontend && npm run dev  # http://localhost:5173
