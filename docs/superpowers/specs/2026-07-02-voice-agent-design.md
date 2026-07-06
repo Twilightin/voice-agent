@@ -4,7 +4,7 @@
 **Status:** Approved design, pending spec review
 **Goal:** Turn the `reference.md` architecture and the `backend.py` / `voice.ts` snippets into a
 **runnable end-to-end demo**: speak into the browser → LangGraph Supervisor routes to a task agent →
-spoken answer back. Weather + TODO stay as dummy agents; this is a template to extend later.
+spoken answer back. The active agents operate on the local Neo4j factory-failure graph.
 
 ## Architecture
 
@@ -14,14 +14,15 @@ spoken answer back. Weather + TODO stay as dummy agents; this is a template to e
 [OpenAI Realtime (browser, WebRTC)]   ← voice I/O + intent only, one tool: ask_backend
    ↓  POST /ask
 [LangGraph Supervisor (FastAPI)]      ← router only, no real work
-   ├─→ weather_agent (+ get_weather)
-   └─→ todo_agent    (+ add_todo)
+   ├─→ qa_agent           (+ query_graphdb, read-only Neo4j Q&A)
+   └─→ registration_agent (+ draft_registration_record, no write yet)
 ```
 
 Role split (unchanged from `reference.md`):
 - **Realtime**: speech↔text + read-back. No business logic. Only tool = `ask_backend`.
 - **Supervisor**: reads intent, dispatches to one task agent, returns a 1–2 sentence summary.
-- **Task agents**: run the actual tool and report the result.
+- **Task agents**: run the actual tool and report the result. `qa_agent` reads the graph; `registration_agent`
+  interviews for a proposed `Equipment -> Failure -> Cause -> Action` record without writing to Neo4j.
 
 ## Project layout (backend-contained Python + separate frontend)
 
@@ -33,6 +34,7 @@ Role split (unchanged from `reference.md`):
 voice-agent/
 ├── .env                      # OPENAI_API_KEY=...  (gitignored; repo root)
 ├── .env.example              # committed template
+├── app_config.json            # OpenAI model, frontend origin, and local Neo4j settings
 ├── .gitignore                # root; ignores .env, .venv
 ├── reference.md / README.md / CLAUDE.md
 ├── backend/                  # Python uv project root
@@ -58,25 +60,29 @@ voice-agent/
 
 ## Backend (`backend/app.py`)
 
-Keeps the reference verbatim: `llm`, `get_weather`/`weather_agent`, `add_todo`/`todo_agent`,
+Keeps the reference shape: `llm`, task agents created with `create_agent(...)`,
 `create_supervisor(...).compile()`, and `POST /ask` returning `result["messages"][-1].content`.
 
 Adds:
-1. **dotenv** — `load_dotenv()` at import so `OPENAI_API_KEY` is available.
-2. **CORS** — `CORSMiddleware` allowing `http://localhost:5173` (Vite dev origin) so the browser can call `/ask` and `/session`.
-3. **`POST /session`** — mints an ephemeral Realtime client secret:
+1. **config file** — root `app_config.json` holds `openai.chat_model`, `openai.realtime_model`,
+   frontend origin, and Neo4j connection defaults.
+2. **dotenv** — `load_dotenv()` at import so `OPENAI_API_KEY` is available.
+3. **CORS** — `CORSMiddleware` allowing `http://localhost:3000` (frontend dev origin) so the browser can call `/ask` and `/session`.
+4. **Neo4j tools** — `query_graphdb` accepts read-only `MATCH`/`CALL` Cypher only; `draft_registration_record`
+   returns a proposed record and does not write.
+5. **`POST /session`** — mints an ephemeral Realtime client secret:
    - Server-side `httpx` POST to `https://api.openai.com/v1/realtime/client_secrets`
      with `Authorization: Bearer <OPENAI_API_KEY>` and body
      `{"expires_after": {"anchor": "created_at", "seconds": 600},
-       "session": {"type": "realtime", "model": "gpt-realtime"}}`.
+       "session": {"type": "realtime", "model": "gpt-realtime-mini"}}`.
    - Returns `{"value": "<ek_...>"}` (the top-level `value` from OpenAI's response) to the browser.
    - The real API key never leaves the server.
 
-**Model note:** `backend.py` uses `ChatOpenAI(model="gpt-4.1")` for the supervisor/agents (text LLM);
-the Realtime browser side uses `gpt-realtime`. Both are kept as-is from the references.
+**Model note:** root `app_config.json` defaults the supervisor/agents to `gpt-4o-mini` and the browser voice
+session to `gpt-realtime-mini`.
 
 **Dependencies:** `langgraph`, `langgraph-supervisor`, `langchain-openai`, `fastapi`,
-`uvicorn[standard]`, `httpx`, `python-dotenv`, `pydantic`. Dev: `pytest`, `pytest-asyncio`.
+`uvicorn[standard]`, `httpx`, `python-dotenv`, `pydantic`, `neo4j`. Dev: `pytest`, `pytest-asyncio`.
 
 ## Frontend (`frontend/`)
 
@@ -94,7 +100,7 @@ Vite + TypeScript. `src/main.ts` = `voice.ts` reworked so it runs in a real page
 1. Browser Start → `POST /session` → backend mints `ek_...` → returns to browser.
 2. `session.connect({apiKey})` → WebRTC to Realtime; mic capture + playback auto-configured.
 3. User speaks → Realtime decides tool call → `ask_backend({request})`.
-4. `ask_backend` → `POST /ask {text}` → supervisor routes to weather/todo agent → summary text.
+4. `ask_backend` → `POST /ask {text}` → supervisor routes to `qa_agent` or `registration_agent` → summary text.
 5. Summary returned to Realtime → spoken back to user (reworded short, per instructions).
 
 ## Error handling
@@ -109,8 +115,8 @@ Vite + TypeScript. `src/main.ts` = `voice.ts` reworked so it runs in a real page
   Monkeypatch the supervisor's `ainvoke` (or patch `ChatOpenAI`) so no live LLM call is made;
   assert `POST /ask` returns the last message content shape `{"answer": ...}`.
   Optionally a `/session` test that monkeypatches `httpx` to assert we return `value`.
-- **Voice loop:** verified manually in-browser (speak "東京の天気は？" → weather agent;
-  "牛乳を買うのをTODOに入れて" → todo agent). Documented in README as a manual check.
+- **Voice loop:** verified manually in-browser (speak "ポンプAが過熱したときの対策は？" → `qa_agent`;
+  "新しい故障ケースを登録したい" → `registration_agent`). Documented in README as a manual check.
 
 ## Run instructions (README)
 
@@ -123,14 +129,14 @@ cd frontend && npm install  # installs frontend deps
 cd backend && uv run uvicorn app:app --port 8000 --reload
 
 # terminal 2 — frontend
-cd frontend && npm run dev  # http://localhost:5173
+cd frontend && npm run dev  # http://localhost:3000
 ```
 Requires `OPENAI_API_KEY` in root `.env` (already present).
 
 ## Out of scope (YAGNI)
 
 - Auth / multi-user sessions, rate limiting, production CORS lockdown.
-- Persisting TODOs (dummy in-memory string only).
+- Writing registration drafts into Neo4j.
 - Deploy/hosting config. Streaming partial supervisor results ("確認中です" async pattern from
   reference.md is noted but not implemented — the demo returns synchronously).
 ```

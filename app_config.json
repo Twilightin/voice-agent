@@ -1,0 +1,16 @@
+{
+  "openai": {
+    "chat_model": "gpt-4o-mini",
+    "realtime_model": "gpt-realtime-mini",
+    "transcribe_model": "gpt-4o-mini-transcribe"
+  },
+  "frontend": {
+    "origin": "http://localhost:3000"
+  },
+  "neo4j": {
+    "uri": "neo4j://localhost:7687",
+    "user": "neo4j",
+    "password": "your-neo4j-password",
+    "database": "neo4j"
+  }
+}
